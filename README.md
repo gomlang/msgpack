@@ -213,6 +213,6 @@ patterns, arbitrary maps, recursive values, timestamps, typed Serde modes and
 incremental streams. Expected bytes were produced by checksum-pinned
 [msgpack-python 1.1.2](https://pypi.org/project/msgpack/1.1.2/) when the fixture was
 captured; the reference implementation is not run or downloaded during tests.
-See [fixture provenance](../consumers/msgpack/tests/data/README.md).
+See [fixture provenance](../../goml-dev/ecosystem/consumers/msgpack/tests/data/README.md).
 
 The streaming serializer and deserializer both report `is_human_readable() == false`, so format-sensitive Serde implementations can select their binary representation.
