@@ -73,6 +73,14 @@ to floats. Numeric-text Serde events parse checked integers or floating literals
 `Pairs::to_hash_map` rejects duplicate keys instead of silently overwriting them.
 Use ordered `Pairs.entries` when encoded byte order must be reproducible.
 
+`Timestamp` implements `Serialize` and `Deserialize`, including nested derived
+struct fields, options and sequences. Typed serialization emits the shortest
+32/64/96-bit timestamp extension; typed decoding accepts all three valid payload
+widths, including longer representations of small seconds values. It requires
+tag `-1` and nanoseconds below one billion. Invalid typed timestamps return
+`Serde` errors through the generic Serde protocol; the explicit value conversion
+APIs retain `InvalidTimestamp`. Opaque `Extension` values remain unchecked.
+
 ## Dynamic API and timestamps
 
 `Value` represents nil, booleans, `Int(i64)`, `Uint(u64)`, both float widths,

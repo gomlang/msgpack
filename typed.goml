@@ -93,3 +93,20 @@ impl Deserialize for Extension {
         Result::Ok(Extension { tag, data })
     }
 }
+
+impl Serialize for Timestamp {
+    fn serialize[S: Serializer](self: Timestamp, serializer: S) -> Result[(), string] {
+        let value = self.to_value().map_err(|problem| problem.to_string())?;
+        let Value::Extension(tag, data) = value else {
+            return Result::Err("invalid timestamp representation")
+        };
+        serializer.serialize_extension(tag, data.as_slice())
+    }
+}
+
+impl Deserialize for Timestamp {
+    fn deserialize[D: Deserializer](deserializer: D) -> Result[Timestamp, string] {
+        let (tag, data) = deserializer.deserialize_extension()?;
+        Timestamp::from_value(Value::Extension(tag, data)).map_err(|problem| problem.to_string())
+    }
+}

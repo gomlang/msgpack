@@ -95,6 +95,7 @@ impl Options {
     }
 }
 
+#[derive(PartialEq)]
 pub struct Timestamp {
     pub seconds: i64,
     pub nanoseconds: u32,
