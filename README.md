@@ -203,16 +203,28 @@ nested values, limits, streaming compaction, all chunk sizes, direct Serde
 derives, event protocol errors, tagged options, partial standard I/O transfers,
 terminal write failures, typed frame retries and bounded concatenated streams.
 
-The separate consumer resolves a normal versioned dependency from the isolated
-registry snapshot. It tests downstream derives and generic specialization;
+The example tests derives and generic specialization, and `goml verify` repeats
+these checks as an independent module against an isolated registry snapshot;
 the verifier also builds, runs and checks unchanged cached build artifacts.
 
-The independent consumer replays 2,490 committed reference cases through GoML
+The example replays 2,490 committed reference cases through GoML
 `#[test]`, covering all 256 tags, malformed/truncated input, exact float bit
 patterns, arbitrary maps, recursive values, timestamps, typed Serde modes and
 incremental streams. Expected bytes were produced by checksum-pinned
 [msgpack-python 1.1.2](https://pypi.org/project/msgpack/1.1.2/) when the fixture was
 captured; the reference implementation is not run or downloaded during tests.
-See [fixture provenance](consumer/tests/data/README.md).
+See [fixture provenance](examples/basic/tests/data/README.md).
 
 The streaming serializer and deserializer both report `is_human_readable() == false`, so format-sensitive Serde implementations can select their binary representation.
+
+## Development and examples
+
+Requires GoML 0.1.55 or newer. The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
+
+```sh
+goml run --example basic
+goml test
+goml verify --timeout 300s
+```
+
+`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test msgpack)` also retains the library-specific smoke and compatibility checks.

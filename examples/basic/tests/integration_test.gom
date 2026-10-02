@@ -1,6 +1,6 @@
 package tests;
 
-use consumer::msgpack as example;
+use ecosystem::msgpack::examples::basic as example;
 use ecosystem::msgpack;
 use std::testing;
 
