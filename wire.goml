@@ -249,7 +249,8 @@ impl Reader {
     }
 
     fn blob(self: Reader, length: isize, is_text: bool) -> Result[Token, Error] {
-        if length > self.options.limits.max_blob {
+        if length > self.options.limits.max_blob
+            || length > self.options.limits.max_bytes - self.cursor.get() {
             return Result::Err(
                 error(ErrorKind::Limit, self.cursor.get(), "blob length exceeds limit"),
             )
@@ -285,6 +286,12 @@ impl Reader {
         } else {
             length
         };
+        if minimum > self.options.limits.max_values - self.values.get()
+            || minimum > self.options.limits.max_bytes - self.cursor.get() {
+            return Result::Err(
+                error(ErrorKind::Limit, self.cursor.get(), "container exceeds remaining budget"),
+            )
+        }
         if minimum > self.input.len() - self.cursor.get() {
             return Result::Err(
                 error(
@@ -304,7 +311,9 @@ impl Reader {
     }
 
     fn extension(self: Reader, length: isize) -> Result[Token, Error] {
-        if length > self.options.limits.max_blob {
+        if length > self.options.limits.max_blob
+            || self.cursor.get() >= self.options.limits.max_bytes
+            || length > self.options.limits.max_bytes - self.cursor.get() - 1 {
             return Result::Err(
                 error(ErrorKind::Limit, self.cursor.get(), "extension length exceeds limit"),
             )

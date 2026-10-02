@@ -121,6 +121,13 @@ consumer-defined type, preserving binary and extension events without building
 a dynamic value tree. A typed decoding error leaves the frame available for a
 different decoder or `next()`. Incomplete input returns `None` as with `next()`.
 
+Header-declared strings, binary values, extensions, and containers are checked
+against the remaining root byte budget before their payload is buffered. Container
+headers also reserve the minimum child-value count (two per map entry) against
+`max_values`. An impossible declaration returns `Limit` immediately, including
+from `Unpacker::next` on fragmented input, instead of waiting for more bytes.
+Truncated declarations that still fit the budgets continue to wait for input.
+
 The scanner retains its token cursor and outstanding child counts between
 chunks. It materializes a value only once complete. Consumed messages advance a
 buffer head, avoiding a tail copy on every `next()` call. Pushes compact consumed
