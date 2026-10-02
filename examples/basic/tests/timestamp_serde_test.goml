@@ -1,0 +1,87 @@
+package tests;
+
+use ecosystem::msgpack;
+use msgpack::{Serialize, Deserialize, Timestamp};
+use std::testing;
+
+#[derive(Serialize, Deserialize, PartialEq)]
+struct Timed {
+    events: Vec[Timestamp],
+    optional: Option[Timestamp],
+}
+
+#[test]
+fn typed_timestamps_cover_width_and_signed_boundaries() -> () {
+    let values = Vec::new();
+    for (seconds, nanoseconds, width) in Vec::from_array(
+        [
+            (0.to_i64(), 0.to_u32(), 6),
+            (4294967295, 0, 6),
+            (4294967296, 0, 10),
+            (0, 1, 10),
+            (17179869183, 999999999, 10),
+            (17179869184, 0, 15),
+            (-1, 999999999, 15),
+            (-9223372036854775808, 0, 15),
+            (9223372036854775807, 999999999, 15),
+        ],
+    ) {
+        let value = Timestamp { seconds, nanoseconds };
+        values.push(value);
+        let encoded = testing::expect_ok(msgpack::to_vec(value), "timestamp encode");
+        testing::assert_eq(encoded.len(), width);
+        testing::assert(
+            encoded
+                == testing::expect_ok(
+                    msgpack::pack(testing::expect_ok(value.to_value(), "value")),
+                    "dynamic",
+                ),
+        );
+        let decoded: Timestamp = testing::expect_ok(
+            msgpack::from_slice(encoded.as_slice()),
+            "timestamp decode",
+        );
+        testing::assert(decoded == value);
+    }
+    let value = Timed {
+        events: values,
+        optional: Option::Some(Timestamp { seconds: -3, nanoseconds: 1 }),
+    };
+    let wire = testing::expect_ok(msgpack::to_vec(value), "nested encode");
+    let decoded: Timed = testing::expect_ok(msgpack::from_slice(wire.as_slice()), "nested decode");
+    testing::assert(decoded == value);
+    for wire in Vec::from_array(
+        [
+            Vec::from_array([215.to_u8(), 255, 0, 0, 0, 0, 0, 0, 0, 1]),
+            Vec::from_array([199.to_u8(), 12, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        ],
+    ) {
+        let decoded: Timestamp = testing::expect_ok(
+            msgpack::from_slice(wire.as_slice()),
+            "legal longer timestamp",
+        );
+        testing::assert(decoded == Timestamp { seconds: 1, nanoseconds: 0 });
+    }
+}
+
+#[test]
+fn typed_timestamps_reject_invalid_semantics_without_changing_opaque_extensions() -> () {
+    testing::assert_err(msgpack::to_vec(Timestamp { seconds: 0, nanoseconds: 1000000000 }));
+    for value in Vec::from_array(
+        [
+            msgpack::Value::Nil,
+            msgpack::Value::Extension(0, Vec::from_array([0, 0, 0, 0])),
+            msgpack::Value::Extension(-1, Vec::from_array([0])),
+            msgpack::Value::Extension(-1, Vec::from_array([238, 107, 40, 0, 0, 0, 0, 0])),
+            msgpack::Value::Extension(
+                -1,
+                Vec::from_array([59, 154, 202, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            ),
+        ],
+    ) {
+        let wire = testing::expect_ok(msgpack::pack(value), "opaque encode");
+        let decoded: Result[Timestamp, msgpack::Error] = msgpack::from_slice(wire.as_slice());
+        testing::assert_err(decoded);
+        testing::assert_ok(msgpack::unpack(wire.as_slice()));
+    }
+}
