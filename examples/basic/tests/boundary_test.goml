@@ -1,0 +1,26 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+#[test]
+fn downstream_fragmented_decoder_rejects_impossible_declared_budget() -> () {
+    let stream = testing::expect_ok(
+        msgpack::Unpacker::new(
+            msgpack::Options {
+                limits: msgpack::Limits { max_values: 2, ..msgpack::Limits::standard() },
+                ..msgpack::Options::standard(),
+            },
+        ),
+        "stream",
+    );
+    testing::assert_ok(stream.push(Vec::from_array([129.to_u8()]).as_slice()));
+    testing::assert_eq(
+        testing::expect_err(stream.next(), "map needs root key and value").kind,
+        msgpack::ErrorKind::Limit,
+    );
+    stream.reset();
+    testing::assert_ok(stream.push(Vec::from_array([145.to_u8(), 192]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "exact budget after reset").is_some());
+    testing::assert_ok(stream.finish());
+}

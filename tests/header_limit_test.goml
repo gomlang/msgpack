@@ -1,0 +1,94 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+#[test]
+fn impossible_payload_lengths_fail_before_payload_arrives() -> () {
+    let options = msgpack::Options {
+        limits: msgpack::Limits { max_bytes: 8, ..msgpack::Limits::standard() },
+        ..msgpack::Options::standard(),
+    };
+    let headers: Vec[Vec[u8]] = Vec::from_array(
+        [
+            Vec::from_array([217, 7]),
+            Vec::from_array([196, 7]),
+            Vec::from_array([199, 6]),
+            Vec::from_array([168]),
+            Vec::from_array([216]),
+            Vec::from_array([152]),
+            Vec::from_array([132]),
+        ],
+    );
+    for header in headers {
+        let stream = testing::expect_ok(msgpack::Unpacker::new(options), "unpacker");
+        testing::assert_ok(stream.push(header.as_slice()));
+        testing::assert_eq(
+            testing::expect_err(stream.next(), "impossible frame").kind,
+            msgpack::ErrorKind::Limit,
+        );
+        testing::assert_eq(
+            testing::expect_err(
+                msgpack::unpack_with_options(header.as_slice(), options),
+                "whole input",
+            ).kind,
+            msgpack::ErrorKind::Limit,
+        );
+        testing::assert_eq(
+            testing::expect_err(msgpack::skip_prefix(header.as_slice(), options), "skip input").kind,
+            msgpack::ErrorKind::Limit,
+        );
+        testing::assert_err(stream.push(b"x".as_slice()));
+    }
+}
+
+#[test]
+fn container_headers_account_for_root_and_map_keys_in_value_budget() -> () {
+    let options = msgpack::Options {
+        limits: msgpack::Limits { max_values: 2, ..msgpack::Limits::standard() },
+        ..msgpack::Options::standard(),
+    };
+    for header in Vec::from_array([146.to_u8(), 129.to_u8()]) {
+        let stream = testing::expect_ok(msgpack::Unpacker::new(options), "unpacker");
+        testing::assert_ok(stream.push(Vec::from_array([header]).as_slice()));
+        testing::assert_eq(
+            testing::expect_err(stream.next(), "impossible child budget").kind,
+            msgpack::ErrorKind::Limit,
+        );
+    }
+    let stream = testing::expect_ok(msgpack::Unpacker::new(options), "unpacker");
+    testing::assert_ok(stream.push(Vec::from_array([145.to_u8()]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "incomplete but feasible").is_none());
+    testing::assert_ok(stream.push(Vec::from_array([192.to_u8()]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "exact value budget").is_some());
+}
+
+#[test]
+fn extension_type_and_blob_headers_fit_exact_byte_limits() -> () {
+    let samples: Vec[Vec[u8]] = Vec::from_array(
+        [
+            Vec::from_array([217, 1, 65]),
+            Vec::from_array([196, 1, 255]),
+            Vec::from_array([199, 1, 5, 255]),
+            Vec::from_array([129, 192, 192]),
+            Vec::from_array([145, 192]),
+        ],
+    );
+    for sample in samples {
+        let options = msgpack::Options {
+            limits: msgpack::Limits { max_bytes: sample.len(), ..msgpack::Limits::standard() },
+            ..msgpack::Options::standard(),
+        };
+        let stream = testing::expect_ok(msgpack::Unpacker::new(options), "unpacker");
+        for index in 0..sample.len() {
+            testing::assert_ok(stream.push(sample.slice(index, index + 1)));
+            if index + 1 < sample.len() {
+                testing::assert(
+                    testing::expect_ok(stream.next(), "incomplete feasible frame").is_none(),
+                );
+            }
+        }
+        testing::assert(testing::expect_ok(stream.next(), "exact byte budget").is_some());
+        testing::assert_ok(stream.finish());
+    }
+}
