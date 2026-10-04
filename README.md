@@ -64,6 +64,10 @@ matters. This option changes the wire convention; it is not an automatic decoder
 heuristic. Enum and struct conventions are likewise library conventions on top
 of MessagePack's data model.
 
+Tagged option discriminants `0` and `1` accept every signed or unsigned integer
+wire width, including legal nonminimal encodings. Other tag values and incorrect
+array lengths remain errors; serialization emits the shortest integer form.
+
 Signed/unsigned integer conversions check the destination range. Floats accept
 only floating wire types; conversion between float widths uses IEEE rounding
 and can overflow to infinity when narrowing. Integers are not silently converted

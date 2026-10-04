@@ -312,12 +312,12 @@ impl serde::Deserializer for Decoder {
                 return Result::Err(self.error("expected tagged option array"))
             };
             match self.token()? {
-                Token::Uint(0) => if length == 1 {
+                Token::Uint(0) | Token::Int(0) => if length == 1 {
                     false
                 } else {
                     return Result::Err(self.error("None tag requires one element"))
                 },
-                Token::Uint(1) => if length == 2 {
+                Token::Uint(1) | Token::Int(1) => if length == 2 {
                     true
                 } else {
                     return Result::Err(self.error("Some tag requires two elements"))

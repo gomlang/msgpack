@@ -1,0 +1,131 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+fn nonminimal_option(tag: u8, width: isize, present: bool) -> Vec[u8] {
+    let wire: Vec[u8] = Vec::from_array(
+        [
+            if present {
+                146
+            } else {
+                145
+            },
+            tag,
+        ],
+    );
+    for _ in 1..width {
+        wire.push(0);
+    }
+    wire.push(
+        if present {
+            1
+        } else {
+            0
+        },
+    );
+    if present {
+        wire.push(42);
+    }
+    wire
+}
+
+#[test]
+fn tagged_options_accept_every_integer_width_and_signedness() -> () {
+    let options = msgpack::Options { tagged_options: true, ..msgpack::Options::standard() };
+    for (tag, width) in[
+        (204.to_u8(), 1),
+        (205.to_u8(), 2),
+        (206.to_u8(), 4),
+        (207.to_u8(), 8),
+        (208.to_u8(), 1),
+        (209.to_u8(), 2),
+        (210.to_u8(), 4),
+        (211.to_u8(), 8),
+    ] {
+        for present in[false, true] {
+            let wire = nonminimal_option(tag, width, present);
+            let decoded: Option[isize] = testing::expect_ok(
+                msgpack::from_slice_with_options(wire.as_slice(), options),
+                "nonminimal option tag",
+            );
+            testing::assert(
+                decoded
+                    == if present {
+                        Option::Some(42)
+                    } else {
+                        Option::None
+                    },
+            );
+            let canonical = testing::expect_ok(
+                msgpack::to_vec_with_options(decoded, options),
+                "canonical option",
+            );
+            testing::assert(
+                canonical
+                    == if present {
+                        Vec::from_array([146, 1, 42])
+                    } else {
+                        Vec::from_array([145, 0])
+                    },
+            );
+        }
+    }
+}
+
+#[test]
+fn fragmented_tagged_options_accept_signed_zero_and_one() -> () {
+    let options = msgpack::Options { tagged_options: true, ..msgpack::Options::standard() };
+    for (tag, width) in[(208.to_u8(), 1), (209.to_u8(), 2), (210.to_u8(), 4), (211.to_u8(), 8)] {
+        let unpacker = testing::expect_ok(msgpack::Unpacker::new(options), "unpacker");
+        for present in[false, true] {
+            let wire = nonminimal_option(tag, width, present);
+            for index in 0..wire.len() {
+                testing::assert_ok(unpacker.push(wire.slice(index, index + 1)));
+                let frame: Option[Option[isize]] = testing::expect_ok(
+                    unpacker.decode_next(),
+                    "fragmented option",
+                );
+                if index + 1 < wire.len() {
+                    testing::assert_none(frame);
+                } else {
+                    testing::assert(
+                        frame
+                            == Option::Some(
+                                if present {
+                                    Option::Some(42)
+                                } else {
+                                    Option::None
+                                },
+                            ),
+                    );
+                }
+            }
+        }
+        testing::assert_ok(unpacker.finish());
+    }
+}
+
+#[test]
+fn tagged_options_still_reject_other_values_and_wrong_payload_counts() -> () {
+    let options = msgpack::Options { tagged_options: true, ..msgpack::Options::standard() };
+    for wire in Vec::from_array(
+        [
+            Vec::from_array([145.to_u8(), 208, 255]),
+            Vec::from_array([145.to_u8(), 208, 2]),
+            Vec::from_array([145.to_u8(), 208, 1]),
+            Vec::from_array([146.to_u8(), 208, 0, 42]),
+            Vec::from_array([145.to_u8(), 202, 0, 0, 0, 0]),
+            Vec::from_array([145.to_u8(), 161, 48]),
+        ],
+    ) {
+        let decoded: Result[Option[isize], msgpack::Error] = msgpack::from_slice_with_options(
+            wire.as_slice(),
+            options,
+        );
+        testing::assert_eq(
+            testing::expect_err(decoded, "invalid option tag or shape").kind,
+            msgpack::ErrorKind::Serde,
+        );
+    }
+}

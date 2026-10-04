@@ -1,0 +1,35 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::bytes;
+use std::io;
+use std::testing;
+
+#[test]
+fn consumer_decodes_nested_options_with_nonminimal_signed_tags() -> () {
+    let options = msgpack::Options { tagged_options: true, ..msgpack::Options::standard() };
+    let wire = Vec::from_array([146.to_u8(), 208, 1, 145, 209, 0, 0]);
+    let decoded: Option[Option[isize]] = testing::expect_ok(
+        msgpack::from_slice_with_options(wire.as_slice(), options),
+        "signed nested option tags",
+    );
+    testing::assert(decoded == Option::Some(Option::None));
+    testing::assert(
+        testing::expect_ok(msgpack::to_vec_with_options(decoded, options), "canonical options")
+            == Vec::from_array([146, 1, 145, 0]),
+    );
+    let reader = testing::expect_ok(
+        msgpack::StreamReader::with_capacity(
+            io::Cursor::new(bytes::Bytes::from_vec(wire)),
+            1,
+            options,
+        ),
+        "stream reader",
+    );
+    let streamed: Option[Option[isize]] = testing::expect_some(
+        testing::expect_ok(reader.decode_next(), "streamed options"),
+        "frame",
+    );
+    testing::assert(streamed == decoded);
+    testing::assert_none(testing::expect_ok(reader.decode_next::[Option[Option[isize]]](), "EOF"));
+}
