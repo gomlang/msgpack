@@ -136,7 +136,10 @@ different decoder or `next()`. Incomplete input returns `None` as with `next()`.
 Header-declared strings, binary values, extensions, and containers are checked
 against the remaining root byte budget before their payload is buffered. Container
 headers also reserve the minimum child-value count (two per map entry) against
-`max_values`. An impossible declaration returns `Limit` immediately, including
+`max_values`. Nested declarations include all unread ancestor siblings in both
+value and byte reservations, including siblings after string, binary, extension
+and fixed-width numeric payloads. These reservations survive fragmented input
+and buffer compaction. An impossible declaration returns `Limit` immediately, including
 from `Unpacker::next` on fragmented input, instead of waiting for more bytes.
 Truncated declarations that still fit the budgets continue to wait for input.
 

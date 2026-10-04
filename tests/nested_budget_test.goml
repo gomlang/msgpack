@@ -1,0 +1,150 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::io;
+use io::Read;
+use std::testing;
+
+struct HeaderSource {
+    data: Vec[u8],
+    position: Ref[isize],
+    calls: Ref[isize],
+}
+
+impl Read for HeaderSource {
+    fn read(self: HeaderSource, output: MutSlice[byte]) -> Result[isize, io::Error] {
+        self.calls.set(self.calls.get() + 1);
+        if self.position.get() == self.data.len() {
+            return Result::Ok(0)
+        }
+        output[0] = self.data[self.position.get()];
+        self.position.set(self.position.get() + 1);
+        Result::Ok(1)
+    }
+}
+
+fn nested_limit(header: Vec[u8], options: msgpack::Options) -> () {
+    testing::assert_eq(
+        testing::expect_err(
+            msgpack::unpack_with_options(header.as_slice(), options),
+            "dynamic declaration",
+        ).kind,
+        msgpack::ErrorKind::Limit,
+    );
+    testing::assert_eq(
+        testing::expect_err(msgpack::skip_prefix(header.as_slice(), options), "skipped declaration").kind,
+        msgpack::ErrorKind::Limit,
+    );
+    testing::assert_eq(
+        testing::expect_err(msgpack::Decoder::new(header.as_slice(), options), "typed declaration").kind,
+        msgpack::ErrorKind::Limit,
+    );
+    let source = HeaderSource { data: header, position: Ref::new(0), calls: Ref::new(0) };
+    let reader = testing::expect_ok(
+        msgpack::StreamReader::with_capacity(source, 1, options),
+        "I/O stream",
+    );
+    match testing::expect_err(reader.next(), "nested declaration before another source read") {
+        msgpack::StreamError::Codec(problem) => testing::assert_eq(
+            problem.kind,
+            msgpack::ErrorKind::Limit,
+        ),
+        _ => testing::fail("expected codec limit"),
+    }
+    testing::assert_eq(source.calls.get(), header.len());
+    testing::assert_err(reader.next());
+    testing::assert_eq(source.calls.get(), header.len());
+    for split in 0..header.len() {
+        let stream = testing::expect_ok(msgpack::Unpacker::new(options), "stream");
+        testing::assert_ok(stream.push(header.slice(0, split)));
+        testing::assert(testing::expect_ok(stream.next(), "feasible prefix").is_none());
+        testing::assert_ok(stream.push(header.slice(split, header.len())));
+        let failure = testing::expect_err(stream.next(), "impossible nested declaration");
+        testing::assert_eq(failure.kind, msgpack::ErrorKind::Limit);
+        testing::assert_eq(
+            testing::expect_err(stream.next(), "saved failure").offset,
+            failure.offset,
+        );
+        testing::assert_err(stream.push(b"x".as_slice()));
+        stream.reset();
+        testing::assert_ok(stream.push(Vec::from_array([192.to_u8()]).as_slice()));
+        testing::assert(testing::expect_ok(stream.next(), "reset frame").is_some());
+    }
+}
+
+#[test]
+fn nested_headers_reserve_unread_ancestor_values_before_children_arrive() -> () {
+    let options = msgpack::Options {
+        limits: msgpack::Limits { max_values: 4, ..msgpack::Limits::standard() },
+        ..msgpack::Options::standard(),
+    };
+    for outer in Vec::from_array([146.to_u8(), 129]) {
+        for inner in Vec::from_array([146.to_u8(), 129]) {
+            nested_limit(Vec::from_array([outer, inner]), options);
+        }
+    }
+}
+
+#[test]
+fn nested_payloads_reserve_unread_sibling_bytes_before_payload_arrives() -> () {
+    for (header, limit) in Vec::from_array(
+        [
+            (Vec::from_array([146.to_u8(), 162]), 4),
+            (Vec::from_array([146.to_u8(), 196, 2]), 5),
+            (Vec::from_array([146.to_u8(), 199, 1]), 5),
+            (Vec::from_array([146.to_u8(), 213]), 5),
+            (Vec::from_array([146.to_u8(), 207]), 10),
+            (Vec::from_array([146.to_u8(), 203]), 10),
+        ],
+    ) {
+        nested_limit(
+            header,
+            msgpack::Options {
+                limits: msgpack::Limits { max_bytes: limit, ..msgpack::Limits::standard() },
+                ..msgpack::Options::standard(),
+            },
+        );
+    }
+}
+
+#[test]
+fn exact_nested_budgets_survive_fragmentation_consumed_frames_and_compaction() -> () {
+    let samples = Vec::from_array(
+        [
+            Vec::from_array([146.to_u8(), 146, 192, 192, 192]),
+            Vec::from_array([129.to_u8(), 129, 192, 192, 192]),
+            Vec::from_array([146.to_u8(), 162, 65, 66, 192]),
+            Vec::from_array([146.to_u8(), 199, 1, 5, 255, 192]),
+        ],
+    );
+    for sample in samples {
+        let options = msgpack::Options {
+            limits: msgpack::Limits {
+                max_bytes: sample.len(),
+                max_values: 5,
+                ..msgpack::Limits::standard(),
+            },
+            ..msgpack::Options::standard(),
+        };
+        testing::assert_ok(msgpack::unpack_with_options(sample.as_slice(), options));
+        testing::assert_eq(
+            testing::expect_ok(msgpack::skip_prefix(sample.as_slice(), options), "skip"),
+            sample.len(),
+        );
+        let stream = testing::expect_ok(msgpack::Unpacker::new(options), "stream");
+        testing::assert_ok(stream.push(Vec::from_array([192.to_u8(), 192, sample[0]]).as_slice()));
+        testing::assert(testing::expect_ok(stream.next(), "prior frame one").is_some());
+        testing::assert(testing::expect_ok(stream.next(), "prior frame two").is_some());
+        testing::assert(testing::expect_ok(stream.next(), "retained header").is_none());
+        for index in 1..sample.len() {
+            testing::assert_ok(stream.push(sample.slice(index, index + 1)));
+            if index + 1 < sample.len() {
+                testing::assert(
+                    testing::expect_ok(stream.next(), "feasible nested prefix").is_none(),
+                );
+            }
+        }
+        testing::assert(testing::expect_ok(stream.next(), "exact frame").is_some());
+        testing::assert_ok(stream.finish());
+    }
+}

@@ -216,6 +216,7 @@ struct Reader {
     options: Options,
     cursor: Ref[isize],
     values: Ref[isize],
+    pending_values: Ref[isize],
 }
 
 impl Reader {
@@ -224,7 +225,15 @@ impl Reader {
         if input.len() > options.limits.max_bytes {
             return Result::Err(error(ErrorKind::Limit, 0, "input exceeds byte limit"))
         }
-        Result::Ok(Reader { input, options, cursor: Ref::new(0), values: Ref::new(0) })
+        Result::Ok(
+            Reader {
+                input,
+                options,
+                cursor: Ref::new(0),
+                values: Ref::new(0),
+                pending_values: Ref::new(1),
+            },
+        )
     }
 
     fn take(self: Reader, length: isize) -> Result[Slice[u8], Error] {
@@ -241,6 +250,7 @@ impl Reader {
     }
 
     fn uint(self: Reader, width: isize) -> Result[u64, Error] {
+        self.reserve_bytes(width)?;
         let mut value: u64 = 0;
         for byte in self.take(width)? {
             value = value * 256 + byte.to_u64();
@@ -248,13 +258,27 @@ impl Reader {
         Result::Ok(value)
     }
 
+    fn reserve_bytes(self: Reader, length: isize) -> Result[(), Error] {
+        let available = self.options.limits.max_bytes - self.cursor.get();
+        if self.pending_values.get() > available || length > available - self.pending_values.get() {
+            return Result::Err(
+                error(
+                    ErrorKind::Limit,
+                    self.cursor.get(),
+                    "value and pending siblings exceed byte limit",
+                ),
+            )
+        }
+        Result::Ok(())
+    }
+
     fn blob(self: Reader, length: isize, is_text: bool) -> Result[Token, Error] {
-        if length > self.options.limits.max_blob
-            || length > self.options.limits.max_bytes - self.cursor.get() {
+        if length > self.options.limits.max_blob {
             return Result::Err(
                 error(ErrorKind::Limit, self.cursor.get(), "blob length exceeds limit"),
             )
         }
+        self.reserve_bytes(length)?;
         let start = self.cursor.get();
         let data = self.take(length)?;
         if is_text && !self.options.allow_invalid_utf8 {
@@ -286,21 +310,14 @@ impl Reader {
         } else {
             length
         };
-        if minimum > self.options.limits.max_values - self.values.get()
-            || minimum > self.options.limits.max_bytes - self.cursor.get() {
+        let available = self.options.limits.max_values - self.values.get();
+        if self.pending_values.get() > available || minimum > available - self.pending_values.get() {
             return Result::Err(
                 error(ErrorKind::Limit, self.cursor.get(), "container exceeds remaining budget"),
             )
         }
-        if minimum > self.input.len() - self.cursor.get() {
-            return Result::Err(
-                error(
-                    ErrorKind::UnexpectedEof,
-                    self.cursor.get(),
-                    "container cannot fit in remaining input",
-                ),
-            )
-        }
+        self.reserve_bytes(minimum)?;
+        self.pending_values.set(self.pending_values.get() + minimum);
         Result::Ok(
             if map {
                 Token::Map(length)
@@ -311,13 +328,12 @@ impl Reader {
     }
 
     fn extension(self: Reader, length: isize) -> Result[Token, Error] {
-        if length > self.options.limits.max_blob
-            || self.cursor.get() >= self.options.limits.max_bytes
-            || length > self.options.limits.max_bytes - self.cursor.get() - 1 {
+        if length > self.options.limits.max_blob {
             return Result::Err(
                 error(ErrorKind::Limit, self.cursor.get(), "extension length exceeds limit"),
             )
         }
+        self.reserve_bytes(length + 1)?;
         let kind = self.byte()?.to_i8();
         Result::Ok(Token::Extension(kind, self.take(length)?))
     }
@@ -329,6 +345,7 @@ impl Reader {
             )
         }
         self.values.set(self.values.get() + 1);
+        self.pending_values.set(self.pending_values.get() - 1);
         let offset = self.cursor.get();
         let tag = self.byte()?;
         if tag <= 127 {

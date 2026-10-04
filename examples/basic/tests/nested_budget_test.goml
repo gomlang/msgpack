@@ -1,0 +1,34 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+#[test]
+fn downstream_nested_declarations_include_ancestor_siblings_in_budgets() -> () {
+    let options = msgpack::Options {
+        limits: msgpack::Limits { max_values: 4, ..msgpack::Limits::standard() },
+        ..msgpack::Options::standard(),
+    };
+    let stream = testing::expect_ok(msgpack::Unpacker::new(options), "stream");
+    testing::assert_ok(stream.push(Vec::from_array([146.to_u8()]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "outer header").is_none());
+    testing::assert_ok(stream.push(Vec::from_array([146.to_u8()]).as_slice()));
+    testing::assert_eq(
+        testing::expect_err(stream.next(), "impossible declaration").kind,
+        msgpack::ErrorKind::Limit,
+    );
+    let exact = msgpack::Options {
+        limits: msgpack::Limits { max_values: 5, ..options.limits },
+        ..options,
+    };
+    let value: Vec[Vec[()]] = testing::expect_ok(
+        msgpack::from_slice_with_options(
+            Vec::from_array([146.to_u8(), 146, 192, 192, 144]).as_slice(),
+            exact,
+        ),
+        "exact typed frame",
+    );
+    testing::assert_eq(value.len(), 2);
+    testing::assert_eq(value[0].len(), 2);
+    testing::assert_eq(value[1].len(), 0);
+}
