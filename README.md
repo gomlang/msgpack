@@ -201,7 +201,9 @@ are iterative. Raising limits also raises allowed memory and stack consumption.
 Errors expose `kind`, byte `offset` and `message`. Wire validation retains its
 specific error kind; custom/typed Serde failures use `ErrorKind::Serde`.
 Streaming decode offsets refer to the current value, not a lifetime stream byte
-counter.
+counter. A `push` buffer-overflow offset points to the end of the unconsumed
+buffer before the rejected input; consumed frames and storage compaction do not
+affect it.
 
 ## Verification
 

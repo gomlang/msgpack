@@ -1,0 +1,23 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+#[test]
+fn stream_overflow_offset_starts_after_consumed_frames() -> () {
+    let stream = testing::expect_ok(
+        msgpack::Unpacker::new(
+            msgpack::Options {
+                limits: msgpack::Limits { max_bytes: 4, ..msgpack::Limits::standard() },
+                ..msgpack::Options::standard(),
+            },
+        ),
+        "stream",
+    );
+    testing::assert_ok(stream.push(Vec::from_array([192.to_u8(), 163, 65]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "consume nil").is_some());
+    testing::assert(testing::expect_ok(stream.next(), "partial string").is_none());
+    let problem = testing::expect_err(stream.push(b"BCD".as_slice()), "buffer limit");
+    testing::assert_eq(problem.kind, msgpack::ErrorKind::Limit);
+    testing::assert_eq(problem.offset, 2);
+}

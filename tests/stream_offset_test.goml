@@ -1,0 +1,86 @@
+package tests;
+
+use ecosystem::msgpack;
+use std::testing;
+
+fn bounded_offset_stream() -> msgpack::Unpacker {
+    testing::expect_ok(
+        msgpack::Unpacker::new(
+            msgpack::Options {
+                limits: msgpack::Limits { max_bytes: 8, ..msgpack::Limits::standard() },
+                ..msgpack::Options::standard(),
+            },
+        ),
+        "bounded stream",
+    )
+}
+
+fn expect_overflow_at_buffer_end(stream: msgpack::Unpacker, expected: isize) -> () {
+    testing::assert_eq(stream.buffered(), expected);
+    let problem = testing::expect_err(stream.push(b"123456789".as_slice()), "overflow");
+    testing::assert_eq(problem.kind, msgpack::ErrorKind::Limit);
+    testing::assert_eq(problem.offset, expected);
+    testing::assert_eq(stream.buffered(), expected);
+    testing::assert_eq(testing::expect_err(stream.next(), "poisoned next").offset, expected);
+    testing::assert_eq(testing::expect_err(stream.finish(), "poisoned finish").offset, expected);
+    testing::assert_eq(
+        testing::expect_err(stream.push(b"".as_slice()), "poisoned push").offset,
+        expected,
+    );
+    stream.reset();
+    testing::assert_eq(
+        testing::expect_err(stream.push(b"123456789".as_slice()), "fresh overflow").offset,
+        0,
+    );
+}
+
+#[test]
+fn stream_overflow_offsets_ignore_consumed_prefixes_and_compaction() -> () {
+    for consumed in Vec::from_array([0, 1, 4]) {
+        for compact in Vec::from_array([false, true]) {
+            let stream = bounded_offset_stream();
+            let input = Vec::new();
+            for _ in 0..consumed {
+                input.push(192.to_u8());
+            }
+            input.extend(Vec::from_array([165.to_u8(), 65, 66]));
+            testing::assert_ok(stream.push(input.as_slice()));
+            for _ in 0..consumed {
+                testing::assert(testing::expect_ok(stream.next(), "consume prefix").is_some());
+            }
+            testing::assert(testing::expect_ok(stream.next(), "partial string").is_none());
+            if compact {
+                // A large consumed prefix compacts here; a small one remains in storage.
+                testing::assert_ok(stream.push(b"C".as_slice()));
+            }
+            expect_overflow_at_buffer_end(
+                stream,
+                if compact {
+                    4
+                } else {
+                    3
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn stream_overflow_offsets_include_all_retained_frames() -> () {
+    let stream = bounded_offset_stream();
+    testing::assert_ok(stream.push(Vec::from_array([192.to_u8(), 1, 165, 65, 66]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "consume prefix").is_some());
+    // The append boundary includes both the next complete frame and the partial frame after it.
+    expect_overflow_at_buffer_end(stream, 4);
+}
+
+#[test]
+fn stream_overflow_offsets_survive_capacity_driven_compaction() -> () {
+    let stream = bounded_offset_stream();
+    testing::assert_ok(stream.push(Vec::from_array([192.to_u8(), 165, 65, 66]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "consume prefix").is_some());
+    // The one-byte prefix is below the normal compaction threshold, but storage needs room.
+    testing::assert_ok(stream.push(Vec::from_array([67.to_u8(), 68, 69, 1, 2]).as_slice()));
+    testing::assert(testing::expect_ok(stream.next(), "complete string").is_some());
+    expect_overflow_at_buffer_end(stream, 2);
+}

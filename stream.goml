@@ -39,7 +39,7 @@ impl Unpacker {
         if input.len() > self.options.limits.max_bytes - self.buffered() {
             let problem = error(
                 ErrorKind::Limit,
-                self.buffer.len(),
+                self.buffered(),
                 "stream buffer exceeds byte limit",
             );
             self.failure.set(Option::Some(problem));
