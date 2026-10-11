@@ -1,6 +1,6 @@
 package tests;
 
-use ecosystem::verification::reference;
+use ecosystem::testkit::reference;
 use ecosystem::msgpack::examples::basic as app;
 use std::fs;
 use std::json;
@@ -13,7 +13,7 @@ fn required(value: json::Value, name: string) -> json::Value {
 
 #[test]
 fn independent_reference_fixture_sequences() -> () {
-    let source = reference::load_text("tests/data/reference.jsonl");
+    let source = reference::load_text(fixture_path("tests/data/reference.jsonl"));
     let mut count = 0;
     for line in source.split("\n") {
         if line == "" {
@@ -34,4 +34,12 @@ fn independent_reference_fixture_sequences() -> () {
         count += 1;
     }
     testing::assert_eq(count, 2490);
+}
+
+fn fixture_path(path: string) -> string {
+    if fs::is_dir("examples/basic") {
+        "examples/basic/" + path
+    } else {
+        path
+    }
 }
