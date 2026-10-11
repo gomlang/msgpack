@@ -227,7 +227,7 @@ nested values, limits, streaming compaction, all chunk sizes, direct Serde
 derives, event protocol errors, tagged options, partial standard I/O transfers,
 terminal write failures, typed frame retries and bounded concatenated streams.
 
-The example tests derives and generic specialization, and `goml verify` repeats
+The example tests derives and generic specialization, and the ecosystem verification runner repeats
 these checks as an independent module against an isolated registry snapshot;
 the verifier also builds, runs and checks unchanged cached build artifacts.
 
@@ -243,12 +243,11 @@ The streaming serializer and deserializer both report `is_human_readable() == fa
 
 ## Development and examples
 
-Requires GoML 0.1.56 or newer. The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
+Requires the source-built GoML toolchain with unversioned registry support pinned in [verification/ci/toolchain.json](https://github.com/gomlang/verification/blob/main/ci/toolchain.json). The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
 
 ```sh
 goml run --example basic
 goml test
-goml verify --timeout 300s
 ```
 
-`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test msgpack)` also retains the library-specific smoke and compatibility checks.
+`goml test` builds the example and runs its tests. `(cd ../verification && just ecosystem-test msgpack)` also retains the library-specific smoke and compatibility checks.
