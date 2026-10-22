@@ -271,3 +271,37 @@ fn interrupted_writer_stops_without_automatic_retry() -> () {
     testing::assert_eq(sink.calls.get(), 1);
     testing::assert_eq(sink.flushes.get(), 0);
 }
+
+#[test]
+fn skip_frames_retains_following_values_and_checks_wire() -> () {
+    let input = bytes::Bytes::from_vec(b"\x92\xa1x\x81\x01\xc0\x2a");
+    let stream = testing::expect_ok(
+        StreamReader::with_capacity(io::Cursor::new(input), 1, Options::standard()),
+        "stream",
+    );
+    let wrong: Result[Option[string], StreamError] = stream.decode_next();
+    testing::assert(wrong.is_err());
+    testing::assert(testing::expect_ok(stream.skip_next(), "skip retained frame"));
+    let next: Option[i64] = testing::expect_ok(stream.decode_next(), "next value");
+    testing::assert(next == Option::Some(42));
+    testing::assert(!testing::expect_ok(stream.skip_next(), "EOF"));
+    testing::assert(!testing::expect_ok(stream.skip_next(), "repeated EOF"));
+    for wire in[b"\x92\x01", b"\xc1"] {
+        let stream = testing::expect_ok(
+            StreamReader::new(io::Cursor::new(bytes::Bytes::from_vec(wire)), Options::standard()),
+            "bad stream",
+        );
+        testing::assert(stream.skip_next().is_err());
+        testing::assert(stream.skip_next().is_err());
+        testing::assert(stream.next().is_err());
+    }
+    let options = Options {
+        limits: Limits { max_bytes: 2, ..Limits::standard() },
+        ..Options::standard(),
+    };
+    let stream = testing::expect_ok(
+        StreamReader::new(io::Cursor::new(bytes::Bytes::from_vec(b"\xa3abc")), options),
+        "bounded",
+    );
+    testing::assert(stream.skip_next().is_err());
+}

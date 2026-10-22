@@ -129,6 +129,16 @@ impl Unpacker {
         }
     }
 
+    pub fn skip_next(self: Unpacker) -> Result[bool, Error] {
+        match self.frame_end()? {
+            Some(end) => {
+                self.advance(end);
+                Result::Ok(true)
+            },
+            None => Result::Ok(false),
+        }
+    }
+
     pub fn next(self: Unpacker) -> Result[Option[Value], Error] {
         let end = match self.frame_end()? {
             Some(end) => end,

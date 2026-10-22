@@ -251,3 +251,11 @@ goml test
 ```
 
 `goml test` builds the example and runs its tests. `(cd ../workflows && just ecosystem-test msgpack)` also retains the library-specific smoke and compatibility checks.
+
+`StreamReader.skip_next()` discards one validated top-level frame and returns
+`true`, or `false` at clean EOF. It also releases a frame retained after a typed
+`decode_next` mismatch. The incremental `Unpacker.skip_next()` has the same
+operation (`false` means no complete frame yet). Neither constructs a `Value`.
+Wire validity, depth, element and byte budgets still apply; this is not an
+unbounded stream-discard operation. Truncated/invalid/I/O failures fuse the
+stream, while following buffered frames remain available after a successful skip.

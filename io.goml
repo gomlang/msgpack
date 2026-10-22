@@ -144,6 +144,13 @@ impl[R: Read] StreamReader[R] {
         }
     }
 
+    pub fn skip_next(self: StreamReader[R]) -> Result[bool, StreamError] {
+        if !self.ready()? {
+            return Result::Ok(false)
+        }
+        self.unpacker.skip_next().map_err(StreamError::Codec)
+    }
+
     pub fn next(self: StreamReader[R]) -> Result[Option[Value], StreamError] {
         if !self.ready()? {
             return Result::Ok(Option::None)
